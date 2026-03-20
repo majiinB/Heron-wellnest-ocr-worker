@@ -39,4 +39,15 @@ export class CollegeDepartmentRepository {
     const rows = await this.findAllActive();
     return rows.map((row) => row.department_name);
   }
+
+  findProgramsByDepartmentId(departmentId: string): Promise<{ program_id: string; program_name: string }[]> {
+        return AppDataSource.query(
+            `
+                SELECT program_id, program_name
+                FROM college_programs
+                WHERE college_department_id = $1 AND is_deleted = false
+            `,
+            [departmentId],
+        );
+    }
 }

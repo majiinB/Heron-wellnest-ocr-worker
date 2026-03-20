@@ -2,7 +2,6 @@ import type { NextFunction, Response } from "express";
 import type { AuthenticatedRequest } from "../interface/authRequest.interface.js";
 import type { VisionService } from "../services/vision.service.js";
 import type { ApiResponse } from "../types/apiResponse.type.js";
-import { AppError } from "../types/appError.type.js";
 import { logger } from "../utils/logger.util.js";
 
 type VisionOcrBody = {

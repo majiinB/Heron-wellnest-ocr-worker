@@ -1,9 +1,10 @@
 import { protos } from "@google-cloud/vision";
 import visionClient from "../config/vision.config.js";
-import { CollegeDepartmentRepository } from "../repository/collegeDepartment.repository.js";
+import { CollegeDepartmentRepository, type CollegeDepartmentRow } from "../repository/collegeDepartment.repository.js";
 import { AppError } from "../types/appError.type.js";
 import { logger } from "../utils/logger.util.js";
 import { StudentRepository } from "../repository/student.repository.js";
+import { SystemConfigRepository } from "../repository/systemConfig.repository.js";
 
 type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
 
@@ -21,6 +22,8 @@ export type VisionCorMatchInput = {
 
 export type VisionCorMatchResult = {
 	department?: string;
+	program?: string;
+	programId?: string;
 	nameMatched: boolean;
 	emailMatched: boolean;
 	yearLevel?: string;
@@ -37,10 +40,16 @@ export type VisionCorMatchResult = {
 export class VisionService {
 	private collegeDepartmentRepository: CollegeDepartmentRepository;
 	private studentRepository: StudentRepository;
+	private systemConfigRepository : SystemConfigRepository;
 
-	constructor(collegeDepartmentRepository: CollegeDepartmentRepository = new CollegeDepartmentRepository(), studentRepository: StudentRepository = new StudentRepository()) {
+	constructor(
+		collegeDepartmentRepository: CollegeDepartmentRepository = new CollegeDepartmentRepository(), 
+		studentRepository: StudentRepository = new StudentRepository(),
+		systemConfigRepository: SystemConfigRepository = new SystemConfigRepository()
+	) {
 		this.collegeDepartmentRepository = collegeDepartmentRepository;
 		this.studentRepository = studentRepository;
+		this.systemConfigRepository = systemConfigRepository;
 	}
 
 	/**
@@ -48,10 +57,14 @@ export class VisionService {
 	 */
 	public async extractCorDataFromGcsUri(gcsUri: string, studentId: string): Promise<VisionCorMatchResult> {
 		const extraction = await this.extractTextFromGcsUri(gcsUri);
+		
 		const studentInfo = await this.studentRepository.findStudentInfoById(studentId);
+		const systemConfig = await this.systemConfigRepository.RetrieveSystemConfig();
 
 		const result : VisionCorMatchResult = {
 			department: undefined,
+			program: undefined,
+			programId: undefined,
 			nameMatched: false,
 			emailMatched: false,
 			yearLevel: undefined,
@@ -72,18 +85,30 @@ export class VisionService {
 		const extractedSchoolYear = this.extractSchoolYear(extraction.fullText);
 		result.schoolYear = extractedSchoolYear;
 
-		const department = this.matchDepartment(normalizedText, departmentCandidates);
-		result.department = department;
+		const departmentMatch = await this.matchDepartment(normalizedText, departmentCandidates);
+		result.department = departmentMatch.departmentName;
+		result.program = departmentMatch.programName;
+		result.programId = departmentMatch.programId;
 		const nameMatched = this.matchExpectedName(normalizedText, studentInfo.user_name);
 		result.nameMatched = nameMatched;
 		const emailMatched = this.matchExpectedEmail(extraction.fullText, studentInfo.email);
 		result.emailMatched = emailMatched;
+
+		if (extractedSchoolYear && systemConfig) {
+			logger.info(`Extracted school year ${extractedSchoolYear} vs current system config ${systemConfig.current_school_year}`);
+		} else {
+			logger.warn(`Could not extract school year or retrieve system config. Extracted: ${extractedSchoolYear}, System Config: ${systemConfig?.current_school_year}`);
+		}
+
+		const schoolYearMatched = extractedSchoolYear === systemConfig?.current_school_year;
 		
-		if (department && nameMatched && emailMatched && extractedSchoolYear) {
-			await this.studentRepository.updateStudentDepartmentById(studentId, department, "N/A", extractedSchoolYear);
+		if (departmentMatch.matched && departmentMatch.programId && nameMatched && emailMatched && extractedSchoolYear && schoolYearMatched) {
+			await this.studentRepository.updateStudentDepartmentById(studentId, departmentMatch.programId, "N/A", extractedSchoolYear);
 
 			return {
-				department,
+				department: departmentMatch.departmentName,
+				program: departmentMatch.programName,
+				programId: departmentMatch.programId,
 				nameMatched: nameMatched,
 				emailMatched: emailMatched,
 				yearLevel: extractedYearLevel,
@@ -156,9 +181,9 @@ export class VisionService {
 		return normalized;
 	}
 
-	private async getDepartmentCandidates(): Promise<string[]> {
+	private async getDepartmentCandidates(): Promise<CollegeDepartmentRow[]> {
 		try {
-			return await this.collegeDepartmentRepository.findAllActiveNames();
+			return await this.collegeDepartmentRepository.findAllActive();
 		} catch (error) {
 			logger.error("Failed to load college departments from database.", error);
 			return [];
@@ -173,15 +198,97 @@ export class VisionService {
 			.trim();
 	}
 
-	private matchDepartment(normalizedText: string, candidates: string[]): string | undefined {
+	private async matchDepartment(
+		normalizedText: string,
+		candidates: CollegeDepartmentRow[],
+	): Promise<{ matched: boolean; departmentName?: string; programId?: string; programName?: string }> {
+
 		for (const candidate of candidates) {
-			const normalizedCandidate = this.normalizeText(candidate);
+			const normalizedCandidate = this.normalizeText(candidate.department_name);
+
 			if (normalizedCandidate && normalizedText.includes(normalizedCandidate)) {
-				return candidate;
+				try {
+					const programs = await this.collegeDepartmentRepository.findProgramsByDepartmentId(
+						candidate.department_id,
+					);
+
+					// First pass: exact substring match
+					for (const program of programs) {
+						const normalizedProgram = this.normalizeText(program.program_name);
+						if (normalizedProgram && normalizedText.includes(normalizedProgram)) {
+							return {
+								matched: true,
+								departmentName: candidate.department_name,
+								programId: program.program_id,
+								programName: program.program_name,
+							};
+						}
+					}
+
+					// Second pass: token-based matching (similar to name matching)
+					let bestProgramMatch: {
+						programId: string;
+						programName: string;
+						matchedCount: number;
+						tokenCount: number;
+					} | null = null;
+
+					for (const program of programs) {
+						const normalizedProgram = this.normalizeText(program.program_name);
+						const tokens = normalizedProgram.split(" ").filter((token) => token.length >= 2);
+						
+						if (tokens.length === 0) continue;
+
+						const matchedCount = tokens.filter((token) => normalizedText.includes(token)).length;
+						const requiredMatches = Math.max(1, Math.ceil(tokens.length * 0.6));
+
+						if (matchedCount >= requiredMatches) {
+							if (
+								!bestProgramMatch ||
+								matchedCount > bestProgramMatch.matchedCount ||
+								(matchedCount === bestProgramMatch.matchedCount && tokens.length > bestProgramMatch.tokenCount)
+							) {
+								bestProgramMatch = {
+									programId: program.program_id,
+									programName: program.program_name,
+									matchedCount,
+									tokenCount: tokens.length,
+								};
+							}
+						}
+					}
+
+					if (bestProgramMatch) {
+						return {
+							matched: true,
+							departmentName: candidate.department_name,
+							programId: bestProgramMatch.programId,
+							programName: bestProgramMatch.programName,
+						};
+					}
+
+					// Fallback: no match found, return first program
+					if (programs.length > 0) {
+						return {
+							matched: true,
+							departmentName: candidate.department_name,
+							programId: programs[0].program_id,
+							programName: programs[0].program_name,
+						};
+					}
+				} catch (error) {
+					logger.error(
+						`Failed to fetch programs for department ${candidate.department_id}`,
+						error,
+					);
+				}
+			} else if (normalizedCandidate) {
+				logger.info(`[DEBUG] ✗ Department "${normalizedCandidate}" NOT found in text`);
 			}
 		}
 
-		return undefined;
+		logger.warn(`[DEBUG] No department matched after checking all ${candidates.length} candidates`);
+		return { matched: false };
 	}
 
 	private matchExpectedEmail(fullText: string, expectedEmail?: string): boolean {
