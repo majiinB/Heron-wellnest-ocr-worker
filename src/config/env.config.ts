@@ -41,12 +41,6 @@ export const envSchema = z.object({
   JWT_ALGORITHM: z.enum(["HS256", "RS256"]).default("HS256"),
   // CORS_ORIGIN: z.string().url(),
 
-  // Encryption
-  MESSAGE_CONTENT_ENCRYPTION_KEY: z.string().min(32, "CONTENT_ENCRYPTION_KEY must be at least 32 characters"),
-  MESSAGE_CONTENT_ENCRYPTION_ALGORITHM: z.enum(["aes-256-gcm"]).default("aes-256-gcm"),
-  MESSAGE_CONTENT_ENCRYPTION_IV_LENGTH: z.coerce.number().default(16), // in bytes
-  MESSAGE_CONTENT_ENCRYPTION_KEY_LENGTH: z.coerce.number().default(32), // in bytes
-
   // Pub/Sub
   // PUBSUB_CHAT_BOT_TOPIC: z.string().min(1, "PUBSUB_CHAT_BOT_TOPIC is required"),
   PUBSUB_AUDIENCE: z.string().url("PUBSUB_AUDIENCE must be a valid URL"),
