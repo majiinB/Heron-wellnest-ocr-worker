@@ -29,8 +29,6 @@ jobs:
       # Run tests
       - run: npm test -- src/tests/auth.test.ts
         env:
-          JWT_SECRET: test-secret-key-for-ci-cd-testing-only-minimum-32-chars
-          MESSAGE_CONTENT_ENCRYPTION_KEY: test-secret-key-for-ci-cd-testing-only-minimum-32-chars
           PUBSUB_SERVICE_ACCOUNT_EMAIL: service@account.iam.gserviceaccount.com
           PUBSUB_AUDIENCE: https://service-a2-c3.a.run.app
 
@@ -39,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     env:
-      SERVICE_NAME: hw-notification-api
+      SERVICE_NAME: hw-ocr-api-worker
       GCP_PROJECT_ID: heron-wellnest
       REGION: us-central1
       ARTIFACT_REGISTRY_REPO: heron-wellnest-repo
@@ -60,8 +58,6 @@ jobs:
       # Run tests
       - run: npm test -- src/tests/auth.test.ts
         env:
-          JWT_SECRET: test-secret-key-for-ci-cd-testing-only-minimum-32-chars
-          MESSAGE_CONTENT_ENCRYPTION_KEY: test-secret-key-for-ci-cd-testing-only-minimum-32-chars
           PUBSUB_SERVICE_ACCOUNT_EMAIL: service@account.iam.gserviceaccount.com
           PUBSUB_AUDIENCE: https://service-a2-c3.a.run.app
 
@@ -102,13 +98,9 @@ jobs:
             --update-env-vars DB_NAME=${{ vars.DB_NAME }} \
             --update-env-vars DB_HOST=${{ vars.DB_HOST }} \
             --update-env-vars DB_PORT=${{ vars.DB_PORT }} \
-            --update-env-vars JWT_ISSUER=${{ vars.JWT_ISSUER }} \
-            --update-env-vars JWT_AUDIENCE=${{ vars.JWT_AUDIENCE }} \
-            --update-env-vars JWT_ALGORITHM=${{ vars.JWT_ALGORITHM }} \
-            --update-env-vars MESSAGE_CONTENT_ENCRYPTION_ALGORITHM=${{ vars.MESSAGE_CONTENT_ENCRYPTION_ALGORITHM }} \
             --update-env-vars PUBSUB_SERVICE_ACCOUNT_EMAIL=${{ vars.PUBSUB_SERVICE_ACCOUNT_EMAIL }} \
             --update-env-vars PUBSUB_AUDIENCE=${{ vars.PUBSUB_AUDIENCE }} \
-            --set-secrets DB_PASSWORD=DB_PASSWORD:latest,MESSAGE_CONTENT_ENCRYPTION_KEY=CHAT_BOT_CONTENT_ENCRYPTION_KEY:latest,JWT_SECRET=JWT_SECRET:latest \
+            --set-secrets DB_PASSWORD=DB_PASSWORD:latest \
             --timeout=300 \
             --concurrency=20 \
             --min-instances=0 \
