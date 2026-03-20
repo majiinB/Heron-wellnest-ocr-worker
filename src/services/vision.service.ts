@@ -11,6 +11,25 @@ export type VisionTextExtractionResult = {
 	textDetections: string[];
 };
 
+export type VisionCorMatchInput = {
+	departmentCandidates?: string[];
+	expectedName?: string;
+	expectedEmail?: string;
+};
+
+export type VisionCorMatchResult = {
+	department?: string;
+	nameMatched: boolean;
+	emailMatched: boolean;
+	yearLevel?: string;
+	schoolYear?: string;
+	deanName?: string;
+};
+
+export type VisionCorExtractionResult = VisionTextExtractionResult & {
+	matched: VisionCorMatchResult;
+};
+
 /**
  * Service class for Google Cloud Vision OCR operations.
  *
@@ -19,6 +38,33 @@ export type VisionTextExtractionResult = {
  * using a shared Vision client instance from configuration.
  */
 export class VisionService {
+	/**
+	 * Extracts OCR text and matches configurable COR fields from a full GCS URI.
+	 */
+	public async extractCorDataFromGcsUri(
+		gcsUri: string,
+		input: VisionCorMatchInput,
+	): Promise<VisionCorExtractionResult> {
+		const extraction = await this.extractTextFromGcsUri(gcsUri);
+
+		return {
+			...extraction,
+			matched: this.matchCorFields(extraction.fullText, input),
+		};
+	}
+
+	/**
+	 * Extracts OCR text and matches configurable COR fields from bucket + file path.
+	 */
+	public async extractCorDataFromGcsFile(
+		bucketName: string,
+		fileName: string,
+		input: VisionCorMatchInput,
+	): Promise<VisionCorExtractionResult> {
+		const gcsUri = this.buildGcsUri(bucketName, fileName);
+		return await this.extractCorDataFromGcsUri(gcsUri, input);
+	}
+
 	/**
 	 * Performs OCR text detection using a full Google Cloud Storage URI.
 	 *
@@ -124,6 +170,133 @@ export class VisionService {
 		}
 
 		return normalized;
+	}
+
+	/**
+	 * Matches structured fields from the OCR text using configured candidates.
+	 */
+	private matchCorFields(fullText: string, input: VisionCorMatchInput): VisionCorMatchResult {
+		const normalizedText = this.normalizeText(fullText);
+		const department = this.matchDepartment(normalizedText, input.departmentCandidates ?? []);
+
+		return {
+			department,
+			nameMatched: this.matchExpectedName(normalizedText, input.expectedName),
+			emailMatched: this.matchExpectedEmail(fullText, input.expectedEmail),
+			yearLevel: this.extractYearLevel(fullText),
+			schoolYear: this.extractSchoolYear(fullText),
+			deanName: this.extractDeanName(fullText),
+		};
+	}
+
+	private normalizeText(text: string): string {
+		return text
+			.toLowerCase()
+			.replace(/[^a-z0-9\s]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
+	private matchDepartment(normalizedText: string, candidates: string[]): string | undefined {
+		for (const candidate of candidates) {
+			const normalizedCandidate = this.normalizeText(candidate);
+			if (normalizedCandidate && normalizedText.includes(normalizedCandidate)) {
+				return candidate;
+			}
+		}
+
+		return undefined;
+	}
+
+	private matchExpectedEmail(fullText: string, expectedEmail?: string): boolean {
+		if (!expectedEmail?.trim()) {
+			return false;
+		}
+
+		return fullText.toLowerCase().includes(expectedEmail.trim().toLowerCase());
+	}
+
+	private matchExpectedName(normalizedText: string, expectedName?: string): boolean {
+		if (!expectedName?.trim()) {
+			return false;
+		}
+
+		const tokens = this
+			.normalizeText(expectedName)
+			.split(" ")
+			.filter((token) => token.length >= 2);
+
+		if (tokens.length === 0) {
+			return false;
+		}
+
+		const matchedCount = tokens.filter((token) => normalizedText.includes(token)).length;
+		const requiredMatches = Math.max(2, Math.ceil(tokens.length * 0.6));
+
+		return matchedCount >= requiredMatches;
+	}
+
+	private extractYearLevel(text: string): string | undefined {
+		const yearLevels: Array<{ regex: RegExp; value: string }> = [
+			{ regex: /\bfirst\s+year\b/i, value: "First Year" },
+			{ regex: /\bsecond\s+year\b/i, value: "Second Year" },
+			{ regex: /\bthird\s+year\b/i, value: "Third Year" },
+			{ regex: /\bfourth\s+year\b/i, value: "Fourth Year" },
+			{ regex: /\bfifth\s+year\b/i, value: "Fifth Year" },
+			{ regex: /\b1st\s+year\b/i, value: "First Year" },
+			{ regex: /\b2nd\s+year\b/i, value: "Second Year" },
+			{ regex: /\b3rd\s+year\b/i, value: "Third Year" },
+			{ regex: /\b4th\s+year\b/i, value: "Fourth Year" },
+			{ regex: /\b5th\s+year\b/i, value: "Fifth Year" },
+		];
+
+		for (const candidate of yearLevels) {
+			if (candidate.regex.test(text)) {
+				return candidate.value;
+			}
+		}
+
+		return undefined;
+	}
+
+	private extractSchoolYear(text: string): string | undefined {
+		const match = text.match(/(\d{4})\s*[-–]\s*(\d{4})/);
+
+		if (!match) {
+			return undefined;
+		}
+
+		const start = parseInt(match[1], 10);
+		const end = parseInt(match[2], 10);
+
+		if (start >= 2000 && start <= 2100 && end === start + 1) {
+			return `${start}-${end}`;
+		}
+
+		return undefined;
+	}
+
+	private extractDeanName(text: string): string | undefined {
+		const lines = text
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+
+		const deanLineIndex = lines.findIndex((line) => /dean\s*\/\s*director/i.test(line));
+		if (deanLineIndex <= 0) {
+			return undefined;
+		}
+
+		const candidate = lines[deanLineIndex - 1]
+			.replace(/\s{2,}/g, " ")
+			.replace(/\.{2,}/g, ".")
+			.trim();
+
+		if (!candidate || /student'?s\s+signature/i.test(candidate)) {
+			return undefined;
+		}
+
+		return candidate;
 	}
 }
 
