@@ -6,12 +6,13 @@ import { AppError } from "../types/appError.type.js";
 import { logger } from "../utils/logger.util.js";
 
 type VisionOcrBody = {
-	gcsUri?: string;
-	bucketName?: string;
-	fileName?: string;
-	departmentCandidates?: string[];
-	expectedName?: string;
-	expectedEmail?: string;
+	gcsUri: string;
+	userId: string
+// 	bucketName?: string;
+// 	fileName?: string;
+// 	departmentCandidates?: string[];
+// 	expectedName?: string;
+// 	expectedEmail?: string;
 };
 
 /**
@@ -44,25 +45,19 @@ export class VisionController {
 
 		if (!body || typeof body !== "object") {
 			logger.error("[VisionController] Missing OCR request body", { body: req.body });
-			throw new AppError(400, "BAD_REQUEST", "Bad Request: request body is required", true);
+			res.status(200).json({
+				success: false,
+				code: "VISION_OCR_FAILED",
+				message: "Text extraction failed: request body is required",
+			} as ApiResponse);
+			return;
 		}
 
 		const gcsUri = body.gcsUri?.toString().trim();
-		const bucketName = body.bucketName?.toString().trim();
-		const fileName = body.fileName?.toString().trim();
 
-		if (!gcsUri && !(bucketName && fileName)) {
-			throw new AppError(
-				400,
-				"BAD_REQUEST",
-				"Bad Request: provide either gcsUri or bucketName and fileName",
-				true,
-			);
-		}
 
-		const extractionResult = gcsUri
-			? await this.visionService.extractTextFromGcsUri(gcsUri)
-			: await this.visionService.extractTextFromGcsFile(bucketName!, fileName!);
+		const extractionResult = await this.visionService.extractTextFromGcsUri(gcsUri)
+			
 
 		const response: ApiResponse = {
 			success: true,
@@ -81,38 +76,20 @@ export class VisionController {
 		const body = req.body as VisionOcrBody;
 
 		if (!body || typeof body !== "object") {
-			logger.error("[VisionController] Missing OCR+match request body", { body: req.body });
-			throw new AppError(400, "BAD_REQUEST", "Bad Request: request body is required", true);
+			logger.error("[VisionController] Missing OCR request body", { body: req.body });
+			res.status(200).json({
+				success: false,
+				code: "VISION_OCR_FAILED",
+				message: "Text extraction failed: request body is required",
+			} as ApiResponse);
+			return;
 		}
 
 		const gcsUri = body.gcsUri?.toString().trim();
-		const bucketName = body.bucketName?.toString().trim();
-		const fileName = body.fileName?.toString().trim();
+		const studentId = body.userId?.toString().trim();
+		
 
-		if (!gcsUri && !(bucketName && fileName)) {
-			throw new AppError(
-				400,
-				"BAD_REQUEST",
-				"Bad Request: provide either gcsUri or bucketName and fileName",
-				true,
-			);
-		}
-
-		const departmentCandidates = Array.isArray(body.departmentCandidates)
-			? body.departmentCandidates.map((value) => value.toString().trim()).filter((value) => value.length > 0)
-			: [];
-
-		const extractionResult = gcsUri
-			? await this.visionService.extractCorDataFromGcsUri(gcsUri, {
-				departmentCandidates,
-				expectedName: body.expectedName,
-				expectedEmail: body.expectedEmail,
-			})
-			: await this.visionService.extractCorDataFromGcsFile(bucketName!, fileName!, {
-				departmentCandidates,
-				expectedName: body.expectedName,
-				expectedEmail: body.expectedEmail,
-			});
+		const extractionResult = await this.visionService.extractCorDataFromGcsUri(gcsUri, studentId);
 
 		const response: ApiResponse = {
 			success: true,

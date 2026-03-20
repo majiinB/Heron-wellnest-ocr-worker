@@ -1,7 +1,9 @@
 import { protos } from "@google-cloud/vision";
 import visionClient from "../config/vision.config.js";
+import { CollegeDepartmentRepository } from "../repository/collegeDepartment.repository.js";
 import { AppError } from "../types/appError.type.js";
 import { logger } from "../utils/logger.util.js";
+import { StudentRepository } from "../repository/student.repository.js";
 
 type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
 
@@ -23,11 +25,6 @@ export type VisionCorMatchResult = {
 	emailMatched: boolean;
 	yearLevel?: string;
 	schoolYear?: string;
-	deanName?: string;
-};
-
-export type VisionCorExtractionResult = VisionTextExtractionResult & {
-	matched: VisionCorMatchResult;
 };
 
 /**
@@ -38,31 +35,64 @@ export type VisionCorExtractionResult = VisionTextExtractionResult & {
  * using a shared Vision client instance from configuration.
  */
 export class VisionService {
-	/**
-	 * Extracts OCR text and matches configurable COR fields from a full GCS URI.
-	 */
-	public async extractCorDataFromGcsUri(
-		gcsUri: string,
-		input: VisionCorMatchInput,
-	): Promise<VisionCorExtractionResult> {
-		const extraction = await this.extractTextFromGcsUri(gcsUri);
+	private collegeDepartmentRepository: CollegeDepartmentRepository;
+	private studentRepository: StudentRepository;
 
-		return {
-			...extraction,
-			matched: this.matchCorFields(extraction.fullText, input),
-		};
+	constructor(collegeDepartmentRepository: CollegeDepartmentRepository = new CollegeDepartmentRepository(), studentRepository: StudentRepository = new StudentRepository()) {
+		this.collegeDepartmentRepository = collegeDepartmentRepository;
+		this.studentRepository = studentRepository;
 	}
 
 	/**
-	 * Extracts OCR text and matches configurable COR fields from bucket + file path.
+	 * Extracts OCR text and matches configurable COR fields from a full GCS URI.
 	 */
-	public async extractCorDataFromGcsFile(
-		bucketName: string,
-		fileName: string,
-		input: VisionCorMatchInput,
-	): Promise<VisionCorExtractionResult> {
-		const gcsUri = this.buildGcsUri(bucketName, fileName);
-		return await this.extractCorDataFromGcsUri(gcsUri, input);
+	public async extractCorDataFromGcsUri(gcsUri: string, studentId: string): Promise<VisionCorMatchResult> {
+		const extraction = await this.extractTextFromGcsUri(gcsUri);
+		const studentInfo = await this.studentRepository.findStudentInfoById(studentId);
+
+		const result : VisionCorMatchResult = {
+			department: undefined,
+			nameMatched: false,
+			emailMatched: false,
+			yearLevel: undefined,
+			schoolYear: undefined,
+		}
+
+		if (!studentInfo) {
+			logger.warn(`Student info not found for ID ${studentId}. COR field matching will be limited.`, { studentId });
+			return result;
+		}
+
+		const normalizedText = this.normalizeText(extraction.fullText);
+
+		const departmentCandidates = await this.getDepartmentCandidates();
+
+		const extractedYearLevel = this.extractYearLevel(extraction.fullText);
+		result.yearLevel = extractedYearLevel;
+		const extractedSchoolYear = this.extractSchoolYear(extraction.fullText);
+		result.schoolYear = extractedSchoolYear;
+
+		const department = this.matchDepartment(normalizedText, departmentCandidates);
+		result.department = department;
+		const nameMatched = this.matchExpectedName(normalizedText, studentInfo.user_name);
+		result.nameMatched = nameMatched;
+		const emailMatched = this.matchExpectedEmail(extraction.fullText, studentInfo.email);
+		result.emailMatched = emailMatched;
+		
+		if (department && nameMatched && emailMatched && extractedSchoolYear) {
+			await this.studentRepository.updateStudentDepartmentById(studentId, department, "N/A", extractedSchoolYear);
+
+			return {
+				department,
+				nameMatched: nameMatched,
+				emailMatched: emailMatched,
+				yearLevel: extractedYearLevel,
+				schoolYear: extractedSchoolYear,
+			};
+		}
+
+		return result;
+
 	}
 
 	/**
@@ -98,21 +128,6 @@ export class VisionService {
 	}
 
 	/**
-	 * Performs OCR text detection on an image in Google Cloud Storage.
-	 *
-	 * @param bucketName - Name of the GCS bucket where the image resides.
-	 * @param fileName - Path to the image file within the bucket.
-	 * @returns A normalized OCR result containing full text and tokenized detections.
-	 */
-	public async extractTextFromGcsFile(
-		bucketName: string,
-		fileName: string,
-	): Promise<VisionTextExtractionResult> {
-		const gcsUri = this.buildGcsUri(bucketName, fileName);
-		return await this.extractTextFromGcsUri(gcsUri);
-	}
-
-	/**
 	 * Convenience method to return only the full OCR text block for a GCS URI.
 	 *
 	 * @param gcsUri - Full GCS URI in the format `gs://bucket/path/to/file`.
@@ -121,37 +136,6 @@ export class VisionService {
 	public async extractFullTextFromGcsUri(gcsUri: string): Promise<string> {
 		const result = await this.extractTextFromGcsUri(gcsUri);
 		return result.fullText;
-	}
-
-	/**
-	 * Convenience method to return only the full OCR text block for a GCS image.
-	 *
-	 * @param bucketName - Name of the GCS bucket where the image resides.
-	 * @param fileName - Path to the image file within the bucket.
-	 * @returns The full detected text string (empty when no text is detected).
-	 */
-	public async extractFullTextFromGcsFile(bucketName: string, fileName: string): Promise<string> {
-		const result = await this.extractTextFromGcsFile(bucketName, fileName);
-		return result.fullText;
-	}
-
-	/**
-	 * Builds and validates a Google Cloud Storage URI for Vision requests.
-	 */
-	private buildGcsUri(bucketName: string, fileName: string): string {
-		const normalizedBucket = bucketName.trim();
-		const normalizedFile = fileName.trim().replace(/^\/+/, "");
-
-		if (!normalizedBucket || !normalizedFile) {
-			throw new AppError(
-				400,
-				"INVALID_GCS_IMAGE_REFERENCE",
-				"Both bucketName and fileName are required to process OCR",
-				true,
-			);
-		}
-
-		return `gs://${normalizedBucket}/${normalizedFile}`;
 	}
 
 	/**
@@ -172,21 +156,13 @@ export class VisionService {
 		return normalized;
 	}
 
-	/**
-	 * Matches structured fields from the OCR text using configured candidates.
-	 */
-	private matchCorFields(fullText: string, input: VisionCorMatchInput): VisionCorMatchResult {
-		const normalizedText = this.normalizeText(fullText);
-		const department = this.matchDepartment(normalizedText, input.departmentCandidates ?? []);
-
-		return {
-			department,
-			nameMatched: this.matchExpectedName(normalizedText, input.expectedName),
-			emailMatched: this.matchExpectedEmail(fullText, input.expectedEmail),
-			yearLevel: this.extractYearLevel(fullText),
-			schoolYear: this.extractSchoolYear(fullText),
-			deanName: this.extractDeanName(fullText),
-		};
+	private async getDepartmentCandidates(): Promise<string[]> {
+		try {
+			return await this.collegeDepartmentRepository.findAllActiveNames();
+		} catch (error) {
+			logger.error("Failed to load college departments from database.", error);
+			return [];
+		}
 	}
 
 	private normalizeText(text: string): string {
