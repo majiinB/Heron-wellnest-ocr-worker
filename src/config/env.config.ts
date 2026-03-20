@@ -45,32 +45,11 @@ export const envSchema = z.object({
   // PUBSUB_CHAT_BOT_TOPIC: z.string().min(1, "PUBSUB_CHAT_BOT_TOPIC is required"),
   PUBSUB_AUDIENCE: z.string().url("PUBSUB_AUDIENCE must be a valid URL"),
   PUBSUB_SERVICE_ACCOUNT_EMAIL: z.string().email("PUBSUB_SERVICE_ACCOUNT_EMAIL must be a valid email")
-}).superRefine((env, ctx) => {
-  if (env.JWT_ALGORITHM === "HS256" && !env.JWT_SECRET) {
-    ctx.addIssue({
-      path: ["JWT_SECRET"],
-      message: "JWT_SECRET is required when using HS256",
-      code: z.ZodIssueCode.custom,
-    });
-  }
-
-  if (env.JWT_ALGORITHM === "RS256") {
-    if (!env.JWT_PRIVATE_KEY) {
-      ctx.addIssue({
-        path: ["JWT_PRIVATE_KEY_PATH"],
-        message: "JWT_PRIVATE_KEY_PATH is required when using RS256",
-        code: z.ZodIssueCode.custom,
-      });
-    }
-    if (!env.JWT_PUBLIC_KEY) {
-      ctx.addIssue({
-        path: ["JWT_PUBLIC_KEY_PATH"],
-        message: "JWT_PUBLIC_KEY_PATH is required when using RS256",
-        code: z.ZodIssueCode.custom,
-      });
-    }
-  }
 });
+
+// .superRefine((env, ctx) => {
+  
+// });
 
 const parsed = envSchema.safeParse(process.env);
 
