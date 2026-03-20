@@ -33,12 +33,12 @@ export const envSchema = z.object({
   DB_NAME : z.string().min(1, "DB_NAME is required").default("heron_wellnest_db"),
 
   // Security
-  JWT_SECRET: z.string().min(32).optional(), // for HS256
-  JWT_PRIVATE_KEY: z.string().optional(), // for RS256
-  JWT_PUBLIC_KEY: z.string().optional(),  // for RS256
-  JWT_ISSUER: z.string().default("heron-wellnest-auth-api"),
-  JWT_AUDIENCE: z.string().default("heron-wellnest-users"),
-  JWT_ALGORITHM: z.enum(["HS256", "RS256"]).default("HS256"),
+  // JWT_SECRET: z.string().min(32).optional(), // for HS256
+  // JWT_PRIVATE_KEY: z.string().optional(), // for RS256
+  // JWT_PUBLIC_KEY: z.string().optional(),  // for RS256
+  // JWT_ISSUER: z.string().default("heron-wellnest-auth-api"),
+  // JWT_AUDIENCE: z.string().default("heron-wellnest-users"),
+  // JWT_ALGORITHM: z.enum(["HS256", "RS256"]).default("HS256"),
   // CORS_ORIGIN: z.string().url(),
 
   // Pub/Sub

@@ -16,46 +16,46 @@ type GoogleOidcPayload = jose.JWTPayload & {
 const GOOGLE_ISSUER = 'https://accounts.google.com';
 const JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 
-const cfg: JwtConfig = {
-  alg: env.JWT_ALGORITHM,
-  issuer: env.JWT_ISSUER,
-  audience: env.JWT_AUDIENCE,
-}
+// const cfg: JwtConfig = {
+//   alg: env.JWT_ALGORITHM,
+//   issuer: env.JWT_ISSUER,
+//   audience: env.JWT_AUDIENCE,
+// }
 
-// Load keys based on algorithm
-let verifyingKey: Uint8Array | jose.KeyObject;
+// // Load keys based on algorithm
+// let verifyingKey: Uint8Array | jose.KeyObject;
 
-if (cfg.alg === 'HS256') {
-  if (!env.JWT_SECRET) {
-    throw new AppError(
-      500,
-      "JWT_SECRET_MISSING",
-      "JWT_SECRET is required for HS256",
-      true
-    );
-  }
-  const secretBuffer = new TextEncoder().encode(env.JWT_SECRET); // convert string to Uint8Array
-  verifyingKey = secretBuffer;
-} else if (cfg.alg === 'RS256') {
-  if (!env.JWT_PRIVATE_KEY || !env.JWT_PUBLIC_KEY) {
-    throw new AppError(
-      500,
-      "JWT_KEYS_MISSING",
-      "RS256 keys are required",
-      true
-    );
-  }
+// if (cfg.alg === 'HS256') {
+//   if (!env.JWT_SECRET) {
+//     throw new AppError(
+//       500,
+//       "JWT_SECRET_MISSING",
+//       "JWT_SECRET is required for HS256",
+//       true
+//     );
+//   }
+//   const secretBuffer = new TextEncoder().encode(env.JWT_SECRET); // convert string to Uint8Array
+//   verifyingKey = secretBuffer;
+// } else if (cfg.alg === 'RS256') {
+//   if (!env.JWT_PRIVATE_KEY || !env.JWT_PUBLIC_KEY) {
+//     throw new AppError(
+//       500,
+//       "JWT_KEYS_MISSING",
+//       "RS256 keys are required",
+//       true
+//     );
+//   }
 
-  // const privatePem = fs.existsSync(env.JWT_PRIVATE_KEY)
-  //   ? fs.readFileSync(env.JWT_PRIVATE_KEY, 'utf8')
-  //   : env.JWT_PRIVATE_KEY;
+//   // const privatePem = fs.existsSync(env.JWT_PRIVATE_KEY)
+//   //   ? fs.readFileSync(env.JWT_PRIVATE_KEY, 'utf8')
+//   //   : env.JWT_PRIVATE_KEY;
 
-  const publicPem = fs.existsSync(env.JWT_PUBLIC_KEY)
-    ? fs.readFileSync(env.JWT_PUBLIC_KEY, 'utf8')
-    : env.JWT_PUBLIC_KEY;
+//   const publicPem = fs.existsSync(env.JWT_PUBLIC_KEY)
+//     ? fs.readFileSync(env.JWT_PUBLIC_KEY, 'utf8')
+//     : env.JWT_PUBLIC_KEY;
 
-  verifyingKey = createPublicKey(publicPem);  
-}
+//   verifyingKey = createPublicKey(publicPem);  
+// }
 
 /** 
  * Verify an access or refresh token. Throws on failure. 
@@ -64,85 +64,85 @@ if (cfg.alg === 'HS256') {
  * @returns The decoded token payload if verification succeeds
  * 
  * @throws {jose.JWTVerificationError} If token verification fails
- * */
-export async function verifyToken(token: string): Promise<AccessTokenClaims> {
-  try {
-    const { payload } = await jwtVerify<AccessTokenClaims>(token, verifyingKey, {
-      algorithms: [cfg.alg],
-      issuer: cfg.issuer,
-      audience: cfg.audience,
-      clockTolerance: "2s", // small leeway for clock skew
-    });
-    return payload;
-  } catch (err) {
-    if (err instanceof AppError) {
-      throw err
-    }
+//  * */
+// export async function verifyToken(token: string): Promise<AccessTokenClaims> {
+//   try {
+//     const { payload } = await jwtVerify<AccessTokenClaims>(token, verifyingKey, {
+//       algorithms: [cfg.alg],
+//       issuer: cfg.issuer,
+//       audience: cfg.audience,
+//       clockTolerance: "2s", // small leeway for clock skew
+//     });
+//     return payload;
+//   } catch (err) {
+//     if (err instanceof AppError) {
+//       throw err
+//     }
     
-    const message = (err as Error).message || "Unknown error";
+//     const message = (err as Error).message || "Unknown error";
 
-    if (err instanceof JWTExpired) {
-      throw new AppError(
-        401,
-        "AUTH_TOKEN_EXPIRED",
-        "Token expired. Please login again.",
-        true
-      );
-    }
+//     if (err instanceof JWTExpired) {
+//       throw new AppError(
+//         401,
+//         "AUTH_TOKEN_EXPIRED",
+//         "Token expired. Please login again.",
+//         true
+//       );
+//     }
 
-    if (err instanceof JWSSignatureVerificationFailed){
-      throw new AppError(
-        401,
-        "AUTH_TOKEN_INVALID_SIGNATURE",
-        "Invalid token signature.",
-        true
-      );
-    }
+//     if (err instanceof JWSSignatureVerificationFailed){
+//       throw new AppError(
+//         401,
+//         "AUTH_TOKEN_INVALID_SIGNATURE",
+//         "Invalid token signature.",
+//         true
+//       );
+//     }
 
-    if (err instanceof JWTClaimValidationFailed){
-      throw new AppError(
-        403,
-        "AUTH_TOKEN_INVALID_CLAIM",
-        "Invalid token claim.",
-        true
-      );
-    }
+//     if (err instanceof JWTClaimValidationFailed){
+//       throw new AppError(
+//         403,
+//         "AUTH_TOKEN_INVALID_CLAIM",
+//         "Invalid token claim.",
+//         true
+//       );
+//     }
 
-    if (err instanceof JWTInvalid){
-      throw new AppError(
-        401, 
-        "AUTH_TOKEN_MALFORMED", 
-        "Token is malformed or structurally invalid.", 
-        true
-      );
-    }
+//     if (err instanceof JWTInvalid){
+//       throw new AppError(
+//         401, 
+//         "AUTH_TOKEN_MALFORMED", 
+//         "Token is malformed or structurally invalid.", 
+//         true
+//       );
+//     }
 
-    if (err instanceof JOSEAlgNotAllowed){
-      throw new AppError(
-        401,
-        "AUTH_TOKEN_INVALID",
-        "Invalid token. Token may be of different source.",
-        true
-      );
-    }
+//     if (err instanceof JOSEAlgNotAllowed){
+//       throw new AppError(
+//         401,
+//         "AUTH_TOKEN_INVALID",
+//         "Invalid token. Token may be of different source.",
+//         true
+//       );
+//     }
 
-    const appError = new AppError(
-      500, 
-      "AUTH_TOKEN_VERIFICATION_FAILED", 
-      `Failed to verify token: ${message}`, 
-      false
-    );
+//     const appError = new AppError(
+//       500, 
+//       "AUTH_TOKEN_VERIFICATION_FAILED", 
+//       `Failed to verify token: ${message}`, 
+//       false
+//     );
 
-    // Preserve original error details for debugging
-    if (err instanceof Error) {
-      appError.stack = err.stack; // replace stack with original
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (appError as any).originalError = err; // optional, keep full error object
-    }
+//     // Preserve original error details for debugging
+//     if (err instanceof Error) {
+//       appError.stack = err.stack; // replace stack with original
+//       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+//       (appError as any).originalError = err; // optional, keep full error object
+//     }
 
-    throw appError;
-  }
-}
+//     throw appError;
+//   }
+// }
 
 export async function verifyPubSubJwt(
   token: string,
