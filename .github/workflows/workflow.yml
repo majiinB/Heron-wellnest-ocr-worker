@@ -100,6 +100,7 @@ jobs:
             --update-env-vars DB_PORT=${{ vars.DB_PORT }} \
             --update-env-vars PUBSUB_SERVICE_ACCOUNT_EMAIL=${{ vars.PUBSUB_SERVICE_ACCOUNT_EMAIL }} \
             --update-env-vars PUBSUB_AUDIENCE=${{ vars.PUBSUB_AUDIENCE }} \
+            --update-env-vars PUBSUB_NOTIFICATION_TOPIC=${{ vars.PUBSUB_NOTIFICATION_TOPIC }} \
             --set-secrets DB_PASSWORD=DB_PASSWORD:latest \
             --timeout=300 \
             --concurrency=20 \

@@ -44,7 +44,8 @@ export const envSchema = z.object({
   // Pub/Sub
   // PUBSUB_CHAT_BOT_TOPIC: z.string().min(1, "PUBSUB_CHAT_BOT_TOPIC is required"),
   PUBSUB_AUDIENCE: z.string().url("PUBSUB_AUDIENCE must be a valid URL"),
-  PUBSUB_SERVICE_ACCOUNT_EMAIL: z.string().email("PUBSUB_SERVICE_ACCOUNT_EMAIL must be a valid email")
+  PUBSUB_SERVICE_ACCOUNT_EMAIL: z.string().email("PUBSUB_SERVICE_ACCOUNT_EMAIL must be a valid email"),
+  PUBSUB_NOTIFICATION_TOPIC: z.string().min(1, "PUBSUB_NOTIFICATION_TOPIC is required"),
 });
 
 // .superRefine((env, ctx) => {

@@ -5,6 +5,8 @@ import { AppError } from "../types/appError.type.js";
 import { logger } from "../utils/logger.util.js";
 import { StudentRepository } from "../repository/student.repository.js";
 import { SystemConfigRepository } from "../repository/systemConfig.repository.js";
+import { publishMessage } from "../utils/pubsub.util.js";
+import { env } from "../config/env.config.js";
 
 type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
 
@@ -106,6 +108,22 @@ export class VisionService {
 			const yearLevelToUpdate = extractedYearLevel ?? "N/A";
 			
 			await this.studentRepository.updateStudentDepartmentById(studentId, departmentMatch.programId, yearLevelToUpdate, extractedSchoolYear);
+
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certifcation of registration for onboarding processed successfully",
+				content: `Your submitted COR has been processed successfully. Detected department: ${departmentMatch.departmentName}, program: ${departmentMatch.programName}, year level: ${yearLevelToUpdate}, school year: ${extractedSchoolYear}. If any of this information is incorrect, please contact the Center for Guidance and Counseling Services' office.`,
+				sendEmail: true,
+				sendInApp: false,
+				data: {
+					department: departmentMatch.departmentName,
+					program: departmentMatch.programName,
+					yearLevel: yearLevelToUpdate,
+					schoolYear: extractedSchoolYear,
+					timestamp: new Date().toISOString(),
+				},
+			});
 
 			return {
 				department: departmentMatch.departmentName,
