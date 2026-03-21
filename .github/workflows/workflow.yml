@@ -31,6 +31,7 @@ jobs:
         env:
           PUBSUB_SERVICE_ACCOUNT_EMAIL: service@account.iam.gserviceaccount.com
           PUBSUB_AUDIENCE: https://service-a2-c3.a.run.app
+          PUBSUB_NOTIFICATION_TOPIC: test-topic
 
   build-and-deploy:
     if: github.ref == 'refs/heads/main'
@@ -60,6 +61,7 @@ jobs:
         env:
           PUBSUB_SERVICE_ACCOUNT_EMAIL: service@account.iam.gserviceaccount.com
           PUBSUB_AUDIENCE: https://service-a2-c3.a.run.app
+          PUBSUB_NOTIFICATION_TOPIC: test-topic
 
       - uses: google-github-actions/auth@v1
         with:
@@ -81,10 +83,8 @@ jobs:
 
       # Debug: Check variables
       - run: |
-          echo "JWT_ALGORITHM=${{ vars.JWT_ALGORITHM }}"
           echo "PUBSUB_SERVICE_ACCOUNT_EMAIL=${{ vars.PUBSUB_SERVICE_ACCOUNT_EMAIL }}"
           echo "PUBSUB_AUDIENCE=${{ vars.PUBSUB_AUDIENCE }}"
-          echo "MESSAGE_CONTENT_ENCRYPTION_ALGORITHM=${{ vars.MESSAGE_CONTENT_ENCRYPTION_ALGORITHM }}"
 
       # Deploy to Cloud Run
       - run: |
