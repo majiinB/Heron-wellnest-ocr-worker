@@ -113,7 +113,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certifcation of registration for onboarding processed successfully",
-				content: `Your submitted COR has been processed successfully. Detected department: ${departmentMatch.departmentName}, program: ${departmentMatch.programName}, year level: ${yearLevelToUpdate}, school year: ${extractedSchoolYear}. If any of this information is incorrect, please contact the Center for Guidance and Counseling Services' office.`,
+				content: `Your submitted COR has been processed successfully.\n\nDetected department: ${departmentMatch.departmentName}\nProgram: ${departmentMatch.programName}\nYear level: ${yearLevelToUpdate}\nSchool year: ${extractedSchoolYear}.\n\nYou may now go back and login to your account`,
 				sendEmail: true,
 				sendInApp: false,
 				data: {
