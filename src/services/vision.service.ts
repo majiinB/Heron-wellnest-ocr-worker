@@ -103,7 +103,9 @@ export class VisionService {
 		const schoolYearMatched = extractedSchoolYear === systemConfig?.current_school_year;
 		
 		if (departmentMatch.matched && departmentMatch.programId && nameMatched && emailMatched && extractedSchoolYear && schoolYearMatched) {
-			await this.studentRepository.updateStudentDepartmentById(studentId, departmentMatch.programId, "N/A", extractedSchoolYear);
+			const yearLevelToUpdate = extractedYearLevel ?? "N/A";
+			
+			await this.studentRepository.updateStudentDepartmentById(studentId, departmentMatch.programId, yearLevelToUpdate, extractedSchoolYear);
 
 			return {
 				department: departmentMatch.departmentName,
