@@ -75,6 +75,16 @@ export class VisionService {
 
 		if (!studentInfo) {
 			logger.warn(`Student info not found for ID ${studentId}. COR field matching will be limited.`, { studentId });
+
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because we could not retrieve your student information. Please ensure you have an account and try again.\n\nIf the issue persists, contact support.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
 			return result;
 		}
 
@@ -84,16 +94,69 @@ export class VisionService {
 
 		const extractedYearLevel = this.extractYearLevel(extraction.fullText);
 		result.yearLevel = extractedYearLevel;
+
 		const extractedSchoolYear = this.extractSchoolYear(extraction.fullText);
+		if(!extractedSchoolYear) {
+			logger.warn(`No school year found for student ID ${studentId}. COR field matching will be limited.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because no school year was found.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
 		result.schoolYear = extractedSchoolYear;
 
 		const departmentMatch = await this.matchDepartment(normalizedText, departmentCandidates);
+		if(!departmentMatch.matched) {
+			logger.warn(`No department match found for student ID ${studentId}. COR field matching will be limited.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because no department match was found.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
 		result.department = departmentMatch.departmentName;
 		result.program = departmentMatch.programName;
 		result.programId = departmentMatch.programId;
+
 		const nameMatched = this.matchExpectedName(normalizedText, studentInfo.user_name);
+		if(!nameMatched) {
+			logger.warn(`Expected name "${studentInfo.user_name}" did not match extracted text for student ID ${studentId}.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because the expected name did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+			return result;
+		}
 		result.nameMatched = nameMatched;
+
 		const emailMatched = this.matchExpectedEmail(extraction.fullText, studentInfo.email);
+		if(!emailMatched) {
+			logger.warn(`Expected email "${studentInfo.email}" did not match extracted text for student ID ${studentId}.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because the expected email did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+			return result;
+		}
 		result.emailMatched = emailMatched;
 
 		if (extractedSchoolYear && systemConfig) {
@@ -103,6 +166,20 @@ export class VisionService {
 		}
 
 		const schoolYearMatched = extractedSchoolYear === systemConfig?.current_school_year;
+
+		if(!schoolYearMatched) {
+			logger.warn(`Extracted school year ${extractedSchoolYear} does not match current system config ${systemConfig?.current_school_year}`);
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because the detected school year "${extractedSchoolYear ?? "N/A"}" does not match the current active school year for onboarding.\n\nPlease verify that you have submitted the correct COR for the current school year and try again.\n\nIf the issue persists, contact support.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
 		
 		if (departmentMatch.matched && departmentMatch.programId && nameMatched && emailMatched && extractedSchoolYear && schoolYearMatched) {
 			const yearLevelToUpdate = extractedYearLevel ?? "N/A";
@@ -112,8 +189,8 @@ export class VisionService {
 			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
 				userId: studentId,
 				type: "system_alerts",
-				title: "Certifcation of registration for onboarding processed successfully",
-				content: `Your submitted COR has been processed successfully.\n\nDetected department: ${departmentMatch.departmentName}\nProgram: ${departmentMatch.programName}\nYear level: ${yearLevelToUpdate}\nSchool year: ${extractedSchoolYear}.\n\nYou may now go back and login to your account`,
+				title: "Certificate of registration for onboarding processed successfully",
+				content: `Your submitted COR has been processed successfully.\n\nDetected department: ${departmentMatch.departmentName}\nProgram: ${departmentMatch.programName}\nYear level: ${yearLevelToUpdate}\nSchool year: ${extractedSchoolYear}.\n\nYou may now go back and log in to your account`,
 				sendEmail: true,
 				sendInApp: false,
 				data: {
@@ -135,6 +212,15 @@ export class VisionService {
 				schoolYear: extractedSchoolYear,
 			};
 		}
+
+		await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+			userId: studentId,
+			type: "system_alerts",
+			title: "Certificate of registration for onboarding processed unsuccessfully",
+			content: `Your submitted COR has been processed, but some fields could not be matched with the expected values.\n\nDetected department: ${departmentMatch.departmentName ?? "N/A"}\nProgram: ${departmentMatch.programName ?? "N/A"}\nYear level: ${extractedYearLevel ?? "N/A"}\nSchool year: ${extractedSchoolYear ?? "N/A"}\n\nPlease verify the detected information and contact support if you believe there is an error.`,
+			sendEmail: true,
+			sendInApp: false,
+		});
 
 		return result;
 
