@@ -5,6 +5,8 @@ import type { ApiResponse } from "../types/apiResponse.type.js";
 import { AppError } from "../types/appError.type.js";
 import { logger } from "../utils/logger.util.js";
 import { validate as isUuid } from "uuid";
+import { publishMessage } from "../utils/pubsub.util.js";
+import { env } from "../config/env.config.js";
 
 type PubSubMessageEnvelope = {
 	message?: {
@@ -79,10 +81,11 @@ export class VisionController {
 	 * Handles OCR extraction and matching of target fields from COR text.
 	 */
 	public async handleExtractAndMatch(req: AuthenticatedRequest, res: Response, _next: NextFunction): Promise<void> {
+		const payload = this.parsePubSubPayload(req.body);
+		const gcsUri = payload.gcsUri?.toString().trim();
+		const studentId = payload.userId?.toString().trim();
+		
 		try {
-			const payload = this.parsePubSubPayload(req.body);
-			const gcsUri = payload.gcsUri?.toString().trim();
-			const studentId = payload.userId?.toString().trim();
 
 			if (!gcsUri) {
 				throw new AppError(400, "BAD_REQUEST", "Bad Request: gcsUri is required", true);
@@ -110,6 +113,24 @@ export class VisionController {
 			if (this.isNonRetryableError(error)) {
 				this.acknowledgeNonRetryableError(res, "VISION_TEXT_MATCH_SKIPPED", error);
 				return;
+			}
+
+			if (studentId) {
+				try {
+					await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+						userId: studentId,
+						type: "system_alerts",
+						title: "Certificate of registration for onboarding processing failed",
+						content: "Your submitted COR could not be processed due to an unexpected system error. Please try again later. If the issue persists, contact support.",
+						sendEmail: true,
+						sendInApp: false,
+					});
+				} catch (notifyError) {
+					logger.error("[VisionController] Failed to publish fallback notification", {
+						studentId,
+						notifyError,
+					});
+				}
 			}
 
 			throw error;
