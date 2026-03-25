@@ -80,7 +80,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certificate of registration for onboarding processed unsuccessfully",
-				content: `Your submitted COR has not been processed because we could not retrieve your student information. Please ensure you have an account and try again.\n\nIf the issue persists, contact support.`,
+				content: `Your submitted COR has not been processed because we could not retrieve your student information. Please ensure you have an account and try again.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
 				sendEmail: true,
 				sendInApp: false,
 			});
@@ -102,7 +102,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certificate of registration for onboarding processed unsuccessfully",
-				content: `Your submitted COR has not been processed because no school year was found.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				content: `Your submitted COR has not been processed because no school year was found.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
 				sendEmail: true,
 				sendInApp: false,
 			});
@@ -118,7 +118,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certificate of registration for onboarding processed unsuccessfully",
-				content: `Your submitted COR has not been processed because no department match was found.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				content: `Your submitted COR has not been processed because no department match was found.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
 				sendEmail: true,
 				sendInApp: false,
 			});
@@ -136,7 +136,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certificate of registration for onboarding processed unsuccessfully",
-				content: `Your submitted COR has not been processed because the expected name did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				content: `Your submitted COR has not been processed because the expected name did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
 				sendEmail: true,
 				sendInApp: false,
 			});
@@ -151,7 +151,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certificate of registration for onboarding processed unsuccessfully",
-				content: `Your submitted COR has not been processed because the expected email did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support.`,
+				content: `Your submitted COR has not been processed because the expected email did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
 				sendEmail: true,
 				sendInApp: false,
 			});
@@ -173,7 +173,7 @@ export class VisionService {
 				userId: studentId,
 				type: "system_alerts",
 				title: "Certificate of registration for onboarding processed unsuccessfully",
-				content: `Your submitted COR has not been processed because the detected school year "${extractedSchoolYear ?? "N/A"}" does not match the current active school year for onboarding.\n\nPlease verify that you have submitted the correct COR for the current school year and try again.\n\nIf the issue persists, contact support.`,
+				content: `Your submitted COR has not been processed because the detected school year "${extractedSchoolYear ?? "N/A"}" does not match the current active school year for onboarding.\n\nPlease verify that you have submitted the correct COR for the current school year and try again.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
 				sendEmail: true,
 				sendInApp: false,
 			});
@@ -217,7 +217,7 @@ export class VisionService {
 			userId: studentId,
 			type: "system_alerts",
 			title: "Certificate of registration for onboarding processed unsuccessfully",
-			content: `Your submitted COR has been processed, but some fields could not be matched with the expected values.\n\nDetected department: ${departmentMatch.departmentName ?? "N/A"}\nProgram: ${departmentMatch.programName ?? "N/A"}\nYear level: ${extractedYearLevel ?? "N/A"}\nSchool year: ${extractedSchoolYear ?? "N/A"}\n\nPlease verify the detected information and contact support if you believe there is an error.`,
+			content: `Your submitted COR has been processed, but some fields could not be matched with the expected values.\n\nDetected department: ${departmentMatch.departmentName ?? "N/A"}\nProgram: ${departmentMatch.programName ?? "N/A"}\nYear level: ${extractedYearLevel ?? "N/A"}\nSchool year: ${extractedSchoolYear ?? "N/A"}\n\nPlease verify the detected information and contact support <heronwellnest@gmail.com> if you believe there is an error.`,
 			sendEmail: true,
 			sendInApp: false,
 		});
@@ -225,6 +225,179 @@ export class VisionService {
 		return result;
 
 	}
+
+	/**
+	 * Extracts OCR text and matches configurable COR fields from a full GCS URI.
+	 */
+	public async extractCorDataFromPdfGcsUri(gcsUri: string, studentId: string): Promise<VisionCorMatchResult> {
+		const extraction = await this.extractTextFromPdfGcsUri(gcsUri);
+		
+		const studentInfo = await this.studentRepository.findStudentInfoById(studentId);
+		const systemConfig = await this.systemConfigRepository.RetrieveSystemConfig();
+
+		const result : VisionCorMatchResult = {
+			department: undefined,
+			program: undefined,
+			programId: undefined,
+			nameMatched: false,
+			emailMatched: false,
+			yearLevel: undefined,
+			schoolYear: undefined,
+		}
+
+		if (!studentInfo) {
+			logger.warn(`Student info not found for ID ${studentId}. COR field matching will be limited.`, { studentId });
+
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because we could not retrieve your student information. Please ensure you have an account and try again.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
+
+		const normalizedText = this.normalizeText(extraction.fullText);
+
+		const departmentCandidates = await this.getDepartmentCandidates();
+
+		const extractedYearLevel = this.extractYearLevel(extraction.fullText);
+		result.yearLevel = extractedYearLevel;
+
+		const extractedSchoolYear = this.extractSchoolYear(extraction.fullText);
+		if(!extractedSchoolYear) {
+			logger.warn(`No school year found for student ID ${studentId}. COR field matching will be limited.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because no school year was found.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
+		result.schoolYear = extractedSchoolYear;
+
+		const departmentMatch = await this.matchDepartment(normalizedText, departmentCandidates);
+		if(!departmentMatch.matched) {
+			logger.warn(`No department match found for student ID ${studentId}. COR field matching will be limited.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because no department match was found.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
+		result.department = departmentMatch.departmentName;
+		result.program = departmentMatch.programName;
+		result.programId = departmentMatch.programId;
+
+		const nameMatched = this.matchExpectedName(normalizedText, studentInfo.user_name);
+		if(!nameMatched) {
+			logger.warn(`Expected name "${studentInfo.user_name}" did not match extracted text for student ID ${studentId}.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because the expected name did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+			return result;
+		}
+		result.nameMatched = nameMatched;
+
+		const emailMatched = this.matchExpectedEmail(extraction.fullText, studentInfo.email);
+		if(!emailMatched) {
+			logger.warn(`Expected email "${studentInfo.email}" did not match extracted text for student ID ${studentId}.`, { studentId });
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because the expected email did not match the ones in your COR.\n\nPlease try again later.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+			return result;
+		}
+		result.emailMatched = emailMatched;
+
+		if (extractedSchoolYear && systemConfig) {
+			logger.info(`Extracted school year ${extractedSchoolYear} vs current system config ${systemConfig.current_school_year}`);
+		} else {
+			logger.warn(`Could not extract school year or retrieve system config. Extracted: ${extractedSchoolYear}, System Config: ${systemConfig?.current_school_year}`);
+		}
+
+		const schoolYearMatched = extractedSchoolYear === systemConfig?.current_school_year;
+
+		if(!schoolYearMatched) {
+			logger.warn(`Extracted school year ${extractedSchoolYear} does not match current system config ${systemConfig?.current_school_year}`);
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed unsuccessfully",
+				content: `Your submitted COR has not been processed because the detected school year "${extractedSchoolYear ?? "N/A"}" does not match the current active school year for onboarding.\n\nPlease verify that you have submitted the correct COR for the current school year and try again.\n\nIf the issue persists, contact support <heronwellnest@gmail.com>.`,
+				sendEmail: true,
+				sendInApp: false,
+			});
+
+			return result;
+		}
+		
+		if (departmentMatch.matched && departmentMatch.programId && nameMatched && emailMatched && extractedSchoolYear && schoolYearMatched) {
+			const yearLevelToUpdate = extractedYearLevel ?? "N/A";
+			
+			await this.studentRepository.updateStudentDepartmentById(studentId, departmentMatch.programId, yearLevelToUpdate, extractedSchoolYear);
+
+			await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+				userId: studentId,
+				type: "system_alerts",
+				title: "Certificate of registration for onboarding processed successfully",
+				content: `Your submitted COR has been processed successfully.\n\nDetected department: ${departmentMatch.departmentName}\nProgram: ${departmentMatch.programName}\nYear level: ${yearLevelToUpdate}\nSchool year: ${extractedSchoolYear}.\n\nYou may now go back and log in to your account`,
+				sendEmail: true,
+				sendInApp: false,
+				data: {
+					department: departmentMatch.departmentName,
+					program: departmentMatch.programName,
+					yearLevel: yearLevelToUpdate,
+					schoolYear: extractedSchoolYear,
+					timestamp: new Date().toISOString(),
+				},
+			});
+
+			return {
+				department: departmentMatch.departmentName,
+				program: departmentMatch.programName,
+				programId: departmentMatch.programId,
+				nameMatched: nameMatched,
+				emailMatched: emailMatched,
+				yearLevel: extractedYearLevel,
+				schoolYear: extractedSchoolYear,
+			};
+		}
+
+		await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+			userId: studentId,
+			type: "system_alerts",
+			title: "Certificate of registration for onboarding processed unsuccessfully",
+			content: `Your submitted COR has been processed, but some fields could not be matched with the expected values.\n\nDetected department: ${departmentMatch.departmentName ?? "N/A"}\nProgram: ${departmentMatch.programName ?? "N/A"}\nYear level: ${extractedYearLevel ?? "N/A"}\nSchool year: ${extractedSchoolYear ?? "N/A"}\n\nPlease verify the detected information and contact support <heronwellnest@gmail.com> if you believe there is an error.`,
+			sendEmail: true,
+			sendInApp: false,
+		});
+
+		return result;
+
+	}
+
 
 	/**
 	 * Performs OCR text detection using a full Google Cloud Storage URI.
@@ -259,6 +432,64 @@ export class VisionService {
 	}
 
 	/**
+	 * Performs OCR text detection on a PDF file in Google Cloud Storage.
+	 *
+	 * @param gcsUri - Full GCS URI in the format `gs://bucket/path/to/file.pdf`.
+	 * @returns A normalized OCR result containing full text and tokenized detections.
+	 */
+	public async extractTextFromPdfGcsUri(gcsUri: string): Promise<VisionTextExtractionResult> {
+		const normalizedGcsUri = this.validateAndNormalizeGcsUri(gcsUri);
+
+		try {
+			const [result] = await visionClient.batchAnnotateFiles({
+				requests: [
+					{
+						inputConfig: {
+							gcsSource: { uri: normalizedGcsUri },
+							mimeType: "application/pdf",
+						},
+						features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
+					},
+				],
+			});
+
+			const fileResponse = result.responses?.[0];
+			const pageResponses = fileResponse?.responses ?? [];
+			const fullText = pageResponses
+				.map((page) => page.fullTextAnnotation?.text?.trim() ?? "")
+				.filter((text) => text.length > 0)
+				.join("\n");
+
+			const annotations: EntityAnnotation[] = pageResponses.flatMap(
+				(page) => page.textAnnotations ?? [],
+			);
+
+			logger.info("PDF OCR extracted text", {
+				gcsUri: normalizedGcsUri,
+				textLength: fullText.length,
+				extractedText: fullText,
+			});
+
+			return {
+				gcsUri: normalizedGcsUri,
+				fullText: fullText,
+				textDetections: annotations
+					.map((annotation) => annotation.description?.trim() ?? "")
+					.filter((text) => text.length > 0),
+			};
+		} catch (error) {
+			logger.error(`Vision OCR failed for PDF ${normalizedGcsUri}.`, error);
+
+			throw new AppError(
+				502,
+				"VISION_PDF_TEXT_DETECTION_FAILED",
+				"Failed to extract text from PDF using Cloud Vision API",
+				true,
+			);
+		}
+	}
+
+	/**
 	 * Convenience method to return only the full OCR text block for a GCS URI.
 	 *
 	 * @param gcsUri - Full GCS URI in the format `gs://bucket/path/to/file`.
@@ -266,6 +497,17 @@ export class VisionService {
 	 */
 	public async extractFullTextFromGcsUri(gcsUri: string): Promise<string> {
 		const result = await this.extractTextFromGcsUri(gcsUri);
+		return result.fullText;
+	}
+
+	/**
+	 * Convenience method to return only the full OCR text block for a GCS URI.
+	 *
+	 * @param gcsUri - Full GCS URI in the format `gs://bucket/path/to/file`.
+	 * @returns The full detected text string (empty when no text is detected).
+	 */
+	public async extractFullTextFromPdfGcsUri(gcsUri: string): Promise<string> {
+		const result = await this.extractTextFromPdfGcsUri(gcsUri);
 		return result.fullText;
 	}
 

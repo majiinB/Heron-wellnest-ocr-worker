@@ -37,47 +37,6 @@ export class VisionController {
 	}
 
 	/**
-	 * Handles OCR text extraction from a GCS image.
-	 *
-	 * Accepts either:
-	 * - `gcsUri` (preferred), or
-	 * - `bucketName` + `fileName`.
-	 *
-	 * @param req - The request containing OCR input in the body.
-	 * @param res - The response object.
-	 * @param _next - The next middleware function (unused).
-	 * @throws {AppError} If payload is missing or invalid.
-	 */
-	public async handleExtractText(req: AuthenticatedRequest, res: Response, _next: NextFunction): Promise<void> {
-		try {
-			const payload = this.parsePubSubPayload(req.body);
-			const gcsUri = payload.gcsUri.toString().trim();
-
-			if (!gcsUri) {
-				throw new AppError(400, "BAD_REQUEST", "Bad Request: gcsUri is required", true);
-			}
-
-			const extractionResult = await this.visionService.extractTextFromGcsUri(gcsUri);
-
-			const response: ApiResponse = {
-				success: true,
-				code: "VISION_TEXT_EXTRACTED",
-				message: "Text extracted successfully",
-				data: extractionResult,
-			};
-
-			res.status(200).json(response);
-		} catch (error) {
-			if (this.isNonRetryableError(error)) {
-				this.acknowledgeNonRetryableError(res, "VISION_TEXT_EXTRACT_SKIPPED", error);
-				return;
-			}
-
-			throw error;
-		}
-	}
-
-	/**
 	 * Handles OCR extraction and matching of target fields from COR text.
 	 */
 	public async handleExtractAndMatch(req: AuthenticatedRequest, res: Response, _next: NextFunction): Promise<void> {
@@ -121,10 +80,71 @@ export class VisionController {
 						userId: studentId,
 						type: "system_alerts",
 						title: "Certificate of registration for onboarding processing failed",
-						content: "Your submitted COR could not be processed due to an unexpected system error. Please try again later. If the issue persists, contact support.",
+						content: "Your submitted COR could not be processed due to an unexpected system error. Please try again later. If the issue persists, contact support <heronwellnest@gmail.com>.",
 						sendEmail: true,
 						sendInApp: false,
 					});
+				} catch (notifyError) {
+					logger.error("[VisionController] Failed to publish fallback notification", {
+						studentId,
+						notifyError,
+					});
+				}
+			}
+
+			throw error;
+		}
+	}
+
+	/**
+	 * Handles OCR extraction and matching of target fields from COR text.
+	 */
+	public async handlePdfExtractAndMatch(req: AuthenticatedRequest, res: Response, _next: NextFunction): Promise<void> {
+		const payload = this.parsePubSubPayload(req.body);
+		const gcsUri = payload.gcsUri?.toString().trim();
+		const studentId = payload.userId?.toString().trim();
+		
+		try {
+
+			if (!gcsUri) {
+				throw new AppError(400, "BAD_REQUEST", "Bad Request: gcsUri is required", true);
+			}
+
+			if (!studentId) {
+				throw new AppError(400, "BAD_REQUEST", "Bad Request: userId is required", true);
+			}
+
+			if (!isUuid(studentId)) {
+				throw new AppError(400, "BAD_REQUEST", "Bad Request: Invalid userId format", true);
+			}
+
+			const extractionResult = await this.visionService.extractCorDataFromPdfGcsUri(gcsUri, studentId);
+
+			const response: ApiResponse = {
+				success: true,
+				code: "VISION_TEXT_MATCHED",
+				message: "Text extracted and matched successfully",
+				data: extractionResult,
+			};
+
+			res.status(200).json(response);
+		} catch (error) {
+			if (this.isNonRetryableError(error)) {
+				this.acknowledgeNonRetryableError(res, "VISION_TEXT_MATCH_SKIPPED", error);
+				return;
+			}
+
+			if (studentId) {
+				try {
+					await publishMessage(env.PUBSUB_NOTIFICATION_TOPIC, {
+						userId: studentId,
+						type: "system_alerts",
+						title: "Certificate of registration for onboarding processing failed",
+						content: "Your submitted COR could not be processed due to an unexpected system error. Please try again later. If the issue persists, contact support <heronwellnest@gmail.com>.",
+						sendEmail: true,
+						sendInApp: false,
+					});
+
 				} catch (notifyError) {
 					logger.error("[VisionController] Failed to publish fallback notification", {
 						studentId,
@@ -189,4 +209,85 @@ export class VisionController {
 
 		return payload;
 	}
+
+	
+
+	/**
+	//  * Handles OCR text extraction from a GCS image.
+	//  *
+	//  * Accepts either:
+	//  * - `gcsUri` (preferred), or
+	//  * - `bucketName` + `fileName`.
+	//  *
+	//  * @param req - The request containing OCR input in the body.
+	//  * @param res - The response object.
+	//  * @param _next - The next middleware function (unused).
+	//  * @throws {AppError} If payload is missing or invalid.
+	//  */
+	// public async handleExtractText(req: AuthenticatedRequest, res: Response, _next: NextFunction): Promise<void> {
+	// 	try {
+	// 		const payload = this.parsePubSubPayload(req.body);
+	// 		const gcsUri = payload.gcsUri.toString().trim();
+
+	// 		if (!gcsUri) {
+	// 			throw new AppError(400, "BAD_REQUEST", "Bad Request: gcsUri is required", true);
+	// 		}
+
+	// 		const extractionResult = await this.visionService.extractTextFromGcsUri(gcsUri);
+
+	// 		const response: ApiResponse = {
+	// 			success: true,
+	// 			code: "VISION_TEXT_EXTRACTED",
+	// 			message: "Text extracted successfully",
+	// 			data: extractionResult,
+	// 		};
+
+	// 		res.status(200).json(response);
+	// 	} catch (error) {
+	// 		if (this.isNonRetryableError(error)) {
+	// 			this.acknowledgeNonRetryableError(res, "VISION_TEXT_EXTRACT_SKIPPED", error);
+	// 			return;
+	// 		}
+
+	// 		throw error;
+	// 	}
+	// }
+
+	// /**
+	//  * Handles OCR text extraction from a GCS PDF.
+	//  *
+	//  * @param req - The request containing OCR input in the body.
+	//  * @param res - The response object.
+	//  * @param _next - The next middleware function (unused).
+	//  * @throws {AppError} If payload is missing or invalid.
+	//  */
+	// public async handleExtractPdfText(req: AuthenticatedRequest, res: Response, _next: NextFunction): Promise<void> {
+	// 	try {
+	// 		const payload = this.parsePubSubPayload(req.body);
+	// 		const gcsUri = payload.gcsUri.toString().trim();
+
+	// 		if (!gcsUri) {
+	// 			throw new AppError(400, "BAD_REQUEST", "Bad Request: gcsUri is required", true);
+	// 		}
+
+	// 		const extractionResult = await this.visionService.extractTextFromPdfGcsUri(gcsUri);
+
+	// 		const response: ApiResponse = {
+	// 			success: true,
+	// 			code: "VISION_PDF_TEXT_EXTRACTED",
+	// 			message: "PDF text extracted successfully",
+	// 			data: extractionResult,
+	// 		};
+
+	// 		res.status(200).json(response);
+	// 	} catch (error) {
+	// 		if (this.isNonRetryableError(error)) {
+	// 			this.acknowledgeNonRetryableError(res, "VISION_PDF_TEXT_EXTRACT_SKIPPED", error);
+	// 			return;
+	// 		}
+
+	// 		throw error;
+	// 	}
+	// }
+
 }

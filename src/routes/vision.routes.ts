@@ -9,6 +9,36 @@ const visionController = new VisionController(visionService);
 
 /**
  * @openapi
+ * /vision/extract-text-pdf:
+ *   post:
+ *     summary: Extract text from a PDF in GCS
+ *     description: Performs OCR on a PDF file stored in Google Cloud Storage.
+ *     tags:
+ *       - Vision
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               gcsUri:
+ *                 type: string
+ *                 example: gs://my-bucket/path/to/document.pdf
+ *             required:
+ *               - gcsUri
+ *     responses:
+ *       "200":
+ *         description: PDF text extracted successfully
+ *       "400":
+ *         description: Bad request - invalid payload
+ *       "500":
+ *         description: Internal server error
+ */
+router.post("/extract-text-pdf", asyncHandler(visionController.handlePdfExtractAndMatch.bind(visionController)));
+
+/**
+ * @openapi
  * /vision/extract-and-match:
  *   post:
  *     summary: Extract text and match configured COR fields
